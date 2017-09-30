@@ -1909,21 +1909,13 @@ chrome.extension.isBeta = function () {
     return chrome.extension.beta_;
 }
 function initManifestVars() {
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", chrome.extension.getURL('manifest.json'), false);
-    xhr.onreadystatechange = function () {
-        if (this.readyState == 4) {
-            var manifest = JSON.parse(this.responseText);
-            chrome.extension.version_ = manifest.version;
-            var url = manifest.homepage_url;
-            if (url.indexOf("github.com") > 0) {
-                chrome.extension.beta_ = true;
-            } else {
-                chrome.extension.beta_ = false;
-            }
-        }
-    };
-    xhr.send();
+    chrome.extension.version_ = chrome.runtime.getManifest().version;
+    var url = chrome.runtime.getManifest().homepage_url;
+    if (url.indexOf("github.com") > 0) {
+        chrome.extension.beta_ = true;
+    } else {
+        chrome.extension.beta_ = false;
+    }
 }
 function setclipboard(text) {
     var txt = document.createElement('textarea');
@@ -2101,8 +2093,10 @@ function batchInjectScripts(tabId, scripts, callback) {
     injectScript(scripts, 0);
 }
 $(function () {
-    pstat.init();
-    wssql.init();
-    amrcsql.init();
-    init();
+    pstat.init( function () { 
+        wssql.init( function () {
+            amrcsql.init(init);
+        })
+     });
 });
+

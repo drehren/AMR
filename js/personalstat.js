@@ -21,65 +21,101 @@ var pstat = {};
 pstat.webdb = {};
 pstat.webdb.db = null;
 
-pstat.webdb.open = function() {
-  var dbSize = 5 * 1024 * 1024; // 5MB
-  pstat.webdb.db = openDatabase("AMR", "1.0", "All mangas reader", dbSize);
-};
+pstat.webdb.open = function(callback) {
+  window.indexedDB = window.indexedDB || window.webkitIndexedDB;
 
-pstat.webdb.createTable = function() {
-  var db = pstat.webdb.db;
-  db.transaction(function(tx) {
-    tx.executeSql("CREATE TABLE IF NOT EXISTS pstat(ID INTEGER PRIMARY KEY ASC, mirror TEXT, mgname TEXT, mgurl TEXT, chapname TEXT, chaptext TEXT, time_spent INTEGER, added_on DATETIME)", []);
-  });
+  if ('webkitIndexedDB' in window) {
+    window.IDBTransaction = window.webkitIDBTransaction;
+    window.IDBKeyRange = window.webkitIDBKeyRange;
+  }
+
+  var request = window.indexedDB.open('AMR');
+  request.onerror = function(){
+    alert('could not open database');
+  };
+  request.onupgradeneeded = function(event) {
+    var db = event.target.result;
+    var store = db.createObjectStore('manga', {keypath:  ["mirror","manga"]});
+    store.createIndex('mirror', 'mirror', {unique:false});
+    db.createObjectStore('pstat', {autoIncrement:true});
+    db.createObjectStore('website', {keypath: 'id'});
+  };
+  request.onsuccess = function(event) {
+    pstat.webdb.db = event.target.result;
+    if (callback)
+      callback();
+  };
 };
 
 pstat.webdb.addStat = function(obj, callback) {
   var db = pstat.webdb.db;
-  db.transaction(function(tx){
-    var addedOn = new Date().getTime();
-    tx.executeSql("INSERT INTO pstat(mirror, mgname, mgurl, chapname, chaptext, time_spent, added_on) VALUES (?,?,?,?,?,?,?)",
-        [obj.mirror, obj.name, obj.url, obj.lastChapterReadName, obj.lastChapterReadURL, 0, addedOn],
-        function(tx, sql_res) {
-          callback(sql_res.insertId);  
-        },
-        pstat.webdb.onError);
-   });
+  var t = db.transaction('pstat', 'readwrite');
+  var store = t.objectStore('pstat');
+
+  obj.timeSpent = 0;
+  obj.addedOn = new Date().getTime();
+
+  var req = store.add(obj);
+  req.oncomplete = function(event) {
+    callback(event.target.result);
+  };
+  req.onerror = function() {
+    console.log("Error while inserting statistic.");
+  };
 };
 
 pstat.webdb.updateStat = function(id, time, callback) {
   var db = pstat.webdb.db;
-  db.transaction(function(tx){
-    var addedOn = new Date();
-    tx.executeSql("update pstat set time_spent = ? where ID = ?",
-        [time, id],
-        callback,
-        pstat.webdb.onError);
-   });
+  var t = db.transaction('pstat', 'readwrite');
+  var store = t.objectStore('pstat');
+
+  var req = store.get(id);
+  req.onsuccess = function(event) {
+    var data = event.target.result;
+    data.timeSpent = time;
+    var r2 = store.put(data, key);
+    r2.onsuccess = function() {
+      callback();
+    };
+    r2.onerror = req.onerror;
+  };
+  req.onerror = function () {
+    console.log("Error while updating stat.");
+  };
 };
 
 pstat.webdb.deleteStat = function(id, callback) {
   var db = pstat.webdb.db;
-  db.transaction(function(tx){
-    tx.executeSql("delete from pstat where ID = ?",
-        [id],
-        callback,
-        pstat.webdb.onError);
-   });
+  var t = db.transaction('pstat', 'readwrite');
+  var store = t.objectStore('pstat');
+
+  var req = store.delete(id);
+  req.onsuccess = function() {
+    callback();
+  };
+  req.onerror = function() {
+    console.log("Error deleting stat");
+  };
 };
 
 pstat.webdb.onError = function(tx, e) {
   alert("There has been an error: " + e.message);
 };
 
-pstat.webdb.getAllPStat = function(renderFunc) {
+pstat.webdb.getAllPStat = function(callback) {
   var db = pstat.webdb.db;
-  db.transaction(function(tx) {
-    tx.executeSql("SELECT * FROM pstat", [], renderFunc,
-        pstat.webdb.onError);
-  });
+  var t = db.transaction('pstat','readonly');
+  var store = t.objectStore('pstat');
+
+  var req = store.getAll();
+  req.onsuccess = function(event) {
+    callback(event.target.result);
+  };
+  req.onerror = function() {
+    console.log("Error while retrieving stats.");
+  };
 };
 
-pstat.init = function() {
-  pstat.webdb.open();
-  pstat.webdb.createTable();
+pstat.init = function(callback) {
+  pstat.webdb.open(callback);
 };
